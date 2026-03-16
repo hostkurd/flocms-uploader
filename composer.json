@@ -1,0 +1,27 @@
+{
+  "name": "hostkurd/flocms-uploader",
+  "description": "Professional file and image upload package for FloCMS with local, private and S3-ready storage drivers.",
+  "type": "library",
+  "license": "MIT",
+  "keywords": ["flocms", "upload", "uploader", "images", "s3", "storage"],
+  "require": {
+    "php": ">=8.1"
+  },
+  "suggest": {
+    "aws/aws-sdk-php": "Required only when using the S3 storage driver.",
+    "ext-gd": "Recommended for image processing support.",
+    "ext-imagick": "Recommended for higher-quality image processing support."
+  },
+  "autoload": {
+    "psr-4": {
+      "FloCMS\\Uploader\\": "src/"
+    }
+  },
+  "authors": [
+    {
+      "name": "HostKurd"
+    }
+  ],
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
