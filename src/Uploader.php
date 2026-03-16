@@ -80,25 +80,45 @@ class Uploader
 
     public function filename(string $filename): static
     {
-        $this->fixedFilename = trim($filename);
+        $filename = trim($filename);
+        
+        if ($filename === '') {
+            throw new UploadException('Filename cannot be empty.');
+        }
+
+        $this->fixedFilename = $filename;
         return $this;
     }
 
     public function visibility(string $visibility): static
     {
+        $visibility = strtolower(trim($visibility));
+
+        if (!in_array($visibility, ['public', 'private'], true)) {
+            throw new UploadException('Visibility must be either public or private.');
+        }
+
         $this->visibility = $visibility;
         return $this;
     }
 
     public function allowExtensions(array $extensions): static
     {
-        $this->allowedExtensions = $extensions;
+        $this->allowedExtensions = array_values(array_unique(array_map(
+        static fn ($ext) => strtolower(ltrim(trim((string) $ext), '.')),
+        $extensions
+        )));
+
         return $this;
     }
 
     public function allowMimeTypes(array $mimeTypes): static
     {
-        $this->allowedMimeTypes = $mimeTypes;
+        $this->allowedMimeTypes = array_values(array_unique(array_map(
+        static fn ($mime) => strtolower(trim((string) $mime)),
+        $mimeTypes
+        )));
+
         return $this;
     }
 
@@ -154,6 +174,11 @@ class Uploader
     public function uploadMany(array $files, ?string $directory = null): array
     {
         $normalizedFiles = $this->normalizeFiles($files);
+
+        if ($normalizedFiles === []) {
+            throw new UploadException('No files were uploaded.');
+        }
+
         $results = [];
 
         foreach ($normalizedFiles as $file) {
@@ -255,6 +280,10 @@ class Uploader
         }
 
         if (!is_array($files['name'])) {
+            if (($files['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                return [];
+            }
+
             return [$files];
         }
 
@@ -262,13 +291,19 @@ class Uploader
         $count = count($files['name']);
 
         for ($i = 0; $i < $count; $i++) {
-            $normalized[] = [
+            $file = [
                 'name' => $files['name'][$i] ?? '',
                 'type' => $files['type'][$i] ?? '',
                 'tmp_name' => $files['tmp_name'][$i] ?? '',
                 'error' => $files['error'][$i] ?? UPLOAD_ERR_NO_FILE,
                 'size' => $files['size'][$i] ?? 0,
             ];
+
+            if ($file['error'] === UPLOAD_ERR_NO_FILE) {
+                continue;
+            }
+
+            $normalized[] = $file;
         }
 
         return $normalized;
