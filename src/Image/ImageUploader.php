@@ -67,13 +67,26 @@ class ImageUploader extends Uploader
         $filename = $this->buildFilename($metadata);
         $relativeOriginal = $this->buildRelativePath($targetDirectory !== '' ? $targetDirectory . '/original' : 'original', $filename);
 
+        $sourceImage = (string) $file['tmp_name'];
+        $workingCopy = tempnam(sys_get_temp_dir(), 'flocms_src_');
+
+        if ($workingCopy === false) {
+            throw new \RuntimeException('Unable to create temporary working copy for image upload.');
+        }
+
+        if (!copy($sourceImage, $workingCopy)) {
+            throw new \RuntimeException('Unable to copy uploaded image to temporary working file.');
+        }
+
         $storedOriginal = null;
         if ($this->keepOriginal) {
-            $storedOriginal = $storage->put($relativeOriginal, (string) $file['tmp_name'], [
+            $storedOriginal = $storage->put($relativeOriginal, $sourceImage, [
                 'visibility' => $this->resolvedVisibility($storageManager),
                 'content_type' => $metadata['mime'],
             ]);
         }
+
+        $processor = new ImageProcessor($this->imageDriver);
 
         $processor = new ImageProcessor($this->imageDriver);
         $versions = [];
@@ -102,7 +115,7 @@ class ImageUploader extends Uploader
             $tmpTarget .= '.' . $format;
 
             $processedMeta = $processor->process(
-                (string) $file['tmp_name'],
+                $workingCopy,
                 array_filter($operations, fn ($key) => in_array($key, ['resize', 'fit'], true), ARRAY_FILTER_USE_KEY),
                 $tmpTarget,
                 [
@@ -127,6 +140,7 @@ class ImageUploader extends Uploader
                 'mime' => $processedMeta['mime'],
             ];
         }
+        @unlink($workingCopy);
 
         return new UploadResult([
             'disk' => $this->diskName,
