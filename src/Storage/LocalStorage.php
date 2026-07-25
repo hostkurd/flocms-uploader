@@ -3,6 +3,7 @@
 namespace FloCMS\Uploader\Storage;
 
 use FloCMS\Uploader\Exceptions\StorageException;
+use FloCMS\Uploader\Support\SafePath;
 
 class LocalStorage implements StorageInterface
 {
@@ -17,12 +18,23 @@ class LocalStorage implements StorageInterface
             throw new StorageException('Local storage root is not configured.');
         }
 
-        $relativePath = ltrim(str_replace('\\', '/', $path), '/');
+        $relativePath = SafePath::relative($path);
         $targetPath = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
         $directory = dirname($targetPath);
 
         if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
             throw new StorageException('Unable to create upload directory: ' . $directory);
+        }
+
+        $resolvedRoot = realpath($root);
+        $resolvedDirectory = realpath($directory);
+        if (
+            $resolvedRoot === false
+            || $resolvedDirectory === false
+            || !$this->isWithin($resolvedRoot, $resolvedDirectory)
+            || is_link($targetPath)
+        ) {
+            throw new StorageException('Upload path escapes the configured storage root.');
         }
 
         if (is_uploaded_file($sourceFile)) {
@@ -64,7 +76,7 @@ class LocalStorage implements StorageInterface
             return null;
         }
 
-        return rtrim((string) $base, '/') . '/' . ltrim($path, '/');
+        return rtrim((string) $base, '/') . '/' . SafePath::relative($path);
     }
 
     public function path(string $path): ?string
@@ -74,6 +86,40 @@ class LocalStorage implements StorageInterface
             return null;
         }
 
-        return rtrim((string) $root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, ltrim($path, '/'));
+        $resolvedRoot = realpath((string) $root);
+        if ($resolvedRoot === false) {
+            return null;
+        }
+
+        $absolute = $resolvedRoot . DIRECTORY_SEPARATOR . str_replace(
+            '/',
+            DIRECTORY_SEPARATOR,
+            SafePath::relative($path)
+        );
+        $existing = realpath($absolute);
+        if ($existing !== false && !$this->isWithin($resolvedRoot, $existing)) {
+            return null;
+        }
+
+        $parent = realpath(dirname($absolute));
+        if ($existing === false && $parent !== false && !$this->isWithin($resolvedRoot, $parent)) {
+            return null;
+        }
+
+        return $absolute;
+    }
+
+    private function isWithin(string $root, string $path): bool
+    {
+        $root = rtrim($root, DIRECTORY_SEPARATOR);
+        $path = rtrim($path, DIRECTORY_SEPARATOR);
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $root = strtolower($root);
+            $path = strtolower($path);
+        }
+
+        return $path === $root
+            || str_starts_with($path, $root . DIRECTORY_SEPARATOR);
     }
 }

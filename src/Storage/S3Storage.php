@@ -4,6 +4,7 @@ namespace FloCMS\Uploader\Storage;
 
 use Aws\S3\S3Client;
 use FloCMS\Uploader\Exceptions\StorageException;
+use FloCMS\Uploader\Support\SafePath;
 
 class S3Storage implements StorageInterface
 {
@@ -49,7 +50,7 @@ class S3Storage implements StorageInterface
         $this->client->putObject($params);
 
         return [
-            'path' => ltrim($path, '/'),
+            'path' => SafePath::relative($path),
             'url' => $this->url($path),
             'absolute_path' => null,
             'visibility' => $options['visibility'] ?? ($this->config['visibility'] ?? 'private'),
@@ -74,7 +75,7 @@ class S3Storage implements StorageInterface
     public function url(string $path): ?string
     {
         if (!empty($this->config['url'])) {
-            return rtrim((string) $this->config['url'], '/') . '/' . ltrim($this->prefix($path), '/');
+            return rtrim((string) $this->config['url'], '/') . '/' . $this->prefix($path);
         }
 
         return $this->client->getObjectUrl($this->config['bucket'], $this->prefix($path));
@@ -87,8 +88,8 @@ class S3Storage implements StorageInterface
 
     private function prefix(string $path): string
     {
-        $prefix = trim((string) ($this->config['prefix'] ?? ''), '/');
-        $path = ltrim($path, '/');
+        $prefix = SafePath::relative((string) ($this->config['prefix'] ?? ''), true);
+        $path = SafePath::relative($path);
 
         return $prefix !== '' ? $prefix . '/' . $path : $path;
     }

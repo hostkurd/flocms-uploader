@@ -2,6 +2,10 @@
 
 return [
     'default_disk' => 'public',
+    'blocked_extensions' => [
+        'php', 'php3', 'php4', 'php5', 'php7', 'php8', 'phtml', 'phar',
+        'cgi', 'pl', 'py', 'sh', 'bash', 'htaccess', 'user.ini',
+    ],
 
     'disks' => [
         'public' => [

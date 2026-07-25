@@ -156,6 +156,14 @@ $result = Uploader::disk('s3')
 - It validates file extension and MIME type independently.
 - It uses random filenames by default.
 - It validates real images with `getimagesize()` before image processing.
+- It rejects traversal, absolute paths, unsafe path segments, and symlink escapes
+  from local storage roots.
+- It calculates upload size from the temporary file rather than trusting the
+  browser-provided size.
+- Common executable/script extensions are blocked by default. Configure
+  `blocked_extensions` only if a private-storage use case requires a different
+  policy.
+- A fixed filename cannot replace the extension that was validated.
 - It does not support SVG sanitization. Do not allow SVG uploads until you add a sanitizer.
 
 ## Public API overview

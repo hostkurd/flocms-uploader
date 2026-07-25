@@ -6,6 +6,7 @@ use FloCMS\Uploader\UploadResult;
 use FloCMS\Uploader\Uploader;
 use FloCMS\Uploader\Storage\StorageManager;
 use FloCMS\Uploader\Validation\FileValidator;
+use FloCMS\Uploader\Exceptions\ImageProcessingException;
 
 class ImageUploader extends Uploader
 {
@@ -67,26 +68,13 @@ class ImageUploader extends Uploader
         $filename = $this->buildFilename($metadata);
         $relativeOriginal = $this->buildRelativePath($targetDirectory !== '' ? $targetDirectory . '/original' : 'original', $filename);
 
-        $sourceImage = (string) $file['tmp_name'];
-        $workingCopy = tempnam(sys_get_temp_dir(), 'flocms_src_');
-
-        if ($workingCopy === false) {
-            throw new \RuntimeException('Unable to create temporary working copy for image upload.');
-        }
-
-        if (!copy($sourceImage, $workingCopy)) {
-            throw new \RuntimeException('Unable to copy uploaded image to temporary working file.');
-        }
-
         $storedOriginal = null;
         if ($this->keepOriginal) {
-            $storedOriginal = $storage->put($relativeOriginal, $sourceImage, [
+            $storedOriginal = $storage->put($relativeOriginal, (string) $file['tmp_name'], [
                 'visibility' => $this->resolvedVisibility($storageManager),
                 'content_type' => $metadata['mime'],
             ]);
         }
-
-        $processor = new ImageProcessor($this->imageDriver);
 
         $processor = new ImageProcessor($this->imageDriver);
         $versions = [];
@@ -105,31 +93,37 @@ class ImageUploader extends Uploader
             }
 
             $format = isset($operations['format']) ? strtolower((string) $operations['format']) : $metadata['extension'];
+            if (!in_array($format, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true)) {
+                throw new ImageProcessingException('Unsupported image output format: ' . $format);
+            }
             $filenameForVersion = pathinfo($filename, PATHINFO_FILENAME) . '.' . ltrim($format, '.');
             $relativePath = $this->buildRelativePath($targetDirectory !== '' ? $targetDirectory . '/' . $versionName : $versionName, $filenameForVersion);
             $tmpTarget = tempnam(sys_get_temp_dir(), 'flocms_img_');
             if ($tmpTarget === false) {
                 throw new \RuntimeException('Unable to create temporary image file.');
             }
-            unlink($tmpTarget);
+            @unlink($tmpTarget);
             $tmpTarget .= '.' . $format;
 
-            $processedMeta = $processor->process(
-                $workingCopy,
-                array_filter($operations, fn ($key) => in_array($key, ['resize', 'fit'], true), ARRAY_FILTER_USE_KEY),
-                $tmpTarget,
-                [
-                    'format' => $format,
-                    'quality' => $operations['quality'] ?? $this->quality,
-                    'optimize' => $operations['optimize'] ?? $this->optimizeImages,
-                ]
-            );
+            try {
+                $processedMeta = $processor->process(
+                    (string) $file['tmp_name'],
+                    array_filter($operations, fn ($key) => in_array($key, ['resize', 'fit'], true), ARRAY_FILTER_USE_KEY),
+                    $tmpTarget,
+                    [
+                        'format' => $format,
+                        'quality' => $operations['quality'] ?? $this->quality,
+                        'optimize' => $operations['optimize'] ?? $this->optimizeImages,
+                    ]
+                );
 
-            $storedVersion = $storage->put($relativePath, $tmpTarget, [
-                'visibility' => $this->resolvedVisibility($storageManager),
-                'content_type' => $processedMeta['mime'],
-            ]);
-            @unlink($tmpTarget);
+                $storedVersion = $storage->put($relativePath, $tmpTarget, [
+                    'visibility' => $this->resolvedVisibility($storageManager),
+                    'content_type' => $processedMeta['mime'],
+                ]);
+            } finally {
+                @unlink($tmpTarget);
+            }
 
             $versions[$versionName] = [
                 'path' => $storedVersion['path'],
@@ -140,7 +134,6 @@ class ImageUploader extends Uploader
                 'mime' => $processedMeta['mime'],
             ];
         }
-        @unlink($workingCopy);
 
         return new UploadResult([
             'disk' => $this->diskName,

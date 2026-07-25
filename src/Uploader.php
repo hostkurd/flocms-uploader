@@ -5,10 +5,16 @@ namespace FloCMS\Uploader;
 use FloCMS\Uploader\Exceptions\UploadException;
 use FloCMS\Uploader\Naming\RandomFileNameGenerator;
 use FloCMS\Uploader\Storage\StorageManager;
+use FloCMS\Uploader\Support\SafePath;
 use FloCMS\Uploader\Validation\FileValidator;
 
 class Uploader
 {
+    private const DEFAULT_BLOCKED_EXTENSIONS = [
+        'php', 'php3', 'php4', 'php5', 'php7', 'php8', 'phtml', 'phar',
+        'cgi', 'pl', 'py', 'sh', 'bash', 'htaccess', 'user.ini',
+    ];
+
     protected static array $globalConfig = [];
 
     protected array $config;
@@ -57,7 +63,7 @@ class Uploader
 
     public function directory(string $directory): static
     {
-        $this->directory = trim($directory, '/');
+        $this->directory = SafePath::relative($directory, true);
         return $this;
     }
 
@@ -124,6 +130,10 @@ class Uploader
 
     public function maxBytes(int $bytes): static
     {
+        if ($bytes < 1) {
+            throw new UploadException('Maximum upload size must be positive.');
+        }
+
         $this->maxBytes = $bytes;
         return $this;
     }
@@ -190,7 +200,11 @@ class Uploader
 
     protected function validationRules(bool $image = false): array
     {
-        $rules = [];
+        $rules = [
+            'blocked_extensions' => (array) (
+                $this->config['blocked_extensions'] ?? self::DEFAULT_BLOCKED_EXTENSIONS
+            ),
+        ];
 
         if ($this->maxBytes !== null) {
             $rules['max_bytes'] = $this->maxBytes;
@@ -238,8 +252,10 @@ class Uploader
             $base = pathinfo($this->fixedFilename, PATHINFO_FILENAME);
             $base = $this->sanitizeBaseFilename($base);
             $configuredExtension = strtolower((string) pathinfo($this->fixedFilename, PATHINFO_EXTENSION));
-            if ($configuredExtension !== '') {
-                $extension = $configuredExtension;
+            if ($configuredExtension !== '' && $configuredExtension !== $extension) {
+                throw new UploadException(
+                    'A fixed filename cannot change the validated file extension.'
+                );
             }
 
             return $extension !== '' ? $base . '.' . $extension : $base;
@@ -264,7 +280,9 @@ class Uploader
 
     protected function buildRelativePath(string $directory, string $filename): string
     {
-        return trim($directory !== '' ? $directory . '/' . $filename : $filename, '/');
+        return SafePath::relative(
+            $directory !== '' ? $directory . '/' . $filename : $filename
+        );
     }
 
     protected function resolvedVisibility(StorageManager $storageManager): string

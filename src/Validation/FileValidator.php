@@ -14,9 +14,23 @@ class FileValidator
 
         $metadata = $this->extractMetadata((string) $file['tmp_name'], (string) ($file['name'] ?? 'file'));
 
-        $size = (int) ($file['size'] ?? filesize((string) $file['tmp_name']) ?: 0);
+        $actualSize = filesize((string) $file['tmp_name']);
+        if ($actualSize === false) {
+            throw new ValidationException('Unable to determine the uploaded file size.');
+        }
+        $size = (int) $actualSize;
         if (!empty($rules['max_bytes']) && $size > (int) $rules['max_bytes']) {
             throw new ValidationException(sprintf('Uploaded file exceeds the maximum allowed size of %d bytes.', (int) $rules['max_bytes']));
+        }
+
+        if (!empty($rules['blocked_extensions'])) {
+            $blocked = array_map(
+                static fn ($ext): string => strtolower(ltrim(trim((string) $ext), '.')),
+                (array) $rules['blocked_extensions']
+            );
+            if (in_array($metadata['extension'], $blocked, true)) {
+                throw new ValidationException('The uploaded file extension is blocked.');
+            }
         }
 
         if (!empty($rules['extensions'])) {
