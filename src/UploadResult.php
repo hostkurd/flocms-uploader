@@ -88,6 +88,16 @@ class UploadResult
         return $this->data['versions'][$name]['url'] ?? null;
     }
 
+    /**
+     * The poster image stored with a video upload, if one was given.
+     */
+    public function poster(): ?UploadResult
+    {
+        $poster = $this->data['poster'] ?? null;
+
+        return $poster instanceof UploadResult ? $poster : null;
+    }
+
     public function toArray(): array
     {
         return $this->data;
