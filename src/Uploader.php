@@ -29,6 +29,9 @@ class Uploader
     protected ?int $maxBytes = null;
     protected array $imageDimensions = [];
 
+    /** Move (rename) a local source file instead of copying it; set by uploadAssembled(). */
+    protected bool $moveSource = false;
+
     public function __construct(?array $config = null)
     {
         $this->config = $config ?? static::$globalConfig;
@@ -53,6 +56,24 @@ class Uploader
     public static function image(?array $config = null): Image\ImageUploader
     {
         return new Image\ImageUploader($config ?? static::$globalConfig);
+    }
+
+    /**
+     * Video uploads: mp4 and webm by default (mov when 'video.allow_mov' is true),
+     * size limit from 'video.max_bytes', optional poster image.
+     */
+    public static function video(?array $config = null): Video\VideoUploader
+    {
+        return new Video\VideoUploader($config ?? static::$globalConfig);
+    }
+
+    /**
+     * Chunked / resumable uploads that end up in this uploader (same disk,
+     * directory and validation rules).
+     */
+    public function chunked(?string $temporaryDirectory = null): Chunked\ChunkedUploader
+    {
+        return new Chunked\ChunkedUploader($this, $this->config, $temporaryDirectory);
     }
 
     public function onDisk(string $disk): static
@@ -153,15 +174,84 @@ class Uploader
         $validator = new FileValidator();
         $metadata = $validator->validate($file, $this->validationRules());
 
+        return $this->storeValidated($file, $metadata);
+    }
+
+    /**
+     * Upload a file assembled by ChunkedUploader. The file is moved into
+     * local storage instead of copied, so large files need no extra space.
+     *
+     * @internal
+     */
+    public function uploadAssembled(array $file, ?string $directory = null): UploadResult
+    {
+        $this->moveSource = true;
+
+        try {
+            return $this->upload($file, $directory);
+        } finally {
+            $this->moveSource = false;
+        }
+    }
+
+    /**
+     * Reject a file by name and declared size before it is uploaded (used to
+     * fail chunked uploads early). The content is still validated on upload.
+     *
+     * @throws Exceptions\ValidationException
+     */
+    public function preflight(string $filename, int $bytes): void
+    {
+        $rules = $this->validationRules();
+        $extension = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
+
+        if ($bytes < 1) {
+            throw new Exceptions\ValidationException('The file is empty.');
+        }
+
+        if (!empty($rules['max_bytes']) && $bytes > (int) $rules['max_bytes']) {
+            throw new Exceptions\ValidationException(sprintf(
+                'Uploaded file exceeds the maximum allowed size of %d bytes.',
+                (int) $rules['max_bytes']
+            ));
+        }
+
+        $blocked = array_map(
+            static fn ($ext): string => strtolower(ltrim(trim((string) $ext), '.')),
+            (array) ($rules['blocked_extensions'] ?? [])
+        );
+        if (in_array($extension, $blocked, true)) {
+            throw new Exceptions\ValidationException('The uploaded file extension is blocked.');
+        }
+
+        if (!empty($rules['extensions']) && !in_array($extension, (array) $rules['extensions'], true)) {
+            throw new Exceptions\ValidationException('The uploaded file extension is not allowed.');
+        }
+    }
+
+    /**
+     * The configured maximum size in bytes, if any.
+     */
+    public function maxUploadBytes(): ?int
+    {
+        return $this->maxBytes;
+    }
+
+    /**
+     * Store a file that has passed validation.
+     */
+    protected function storeValidated(array $file, array $metadata, ?string $fixedFilename = null): UploadResult
+    {
         $storageManager = new StorageManager($this->config);
         $storage = $storageManager->disk($this->diskName);
         $targetDirectory = $this->buildDirectory();
-        $filename = $this->buildFilename($metadata);
+        $filename = $fixedFilename ?? $this->buildFilename($metadata);
         $relativePath = $this->buildRelativePath($targetDirectory, $filename);
 
         $stored = $storage->put($relativePath, (string) $file['tmp_name'], [
             'visibility' => $this->resolvedVisibility($storageManager),
             'content_type' => $metadata['mime'],
+            'move' => $this->moveSource,
         ]);
 
         return new UploadResult([

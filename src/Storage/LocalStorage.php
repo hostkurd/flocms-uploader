@@ -39,6 +39,14 @@ class LocalStorage implements StorageInterface
 
         if (is_uploaded_file($sourceFile)) {
             $moved = move_uploaded_file($sourceFile, $targetPath);
+        } elseif (!empty($options['move'])) {
+            // Assembled chunked uploads: rename instead of copying large files
+            $moved = @rename($sourceFile, $targetPath);
+
+            if (!$moved && copy($sourceFile, $targetPath)) {
+                @unlink($sourceFile);
+                $moved = true;
+            }
         } else {
             $moved = copy($sourceFile, $targetPath);
         }
