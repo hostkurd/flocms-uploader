@@ -1,6 +1,17 @@
 # Changelog
 
-## 1.2.0 - Unreleased
+## 1.2.1 - 2026-10-16
+
+### Fixed
+- Imagick driver: `resize` padded every image to the full box (a 2400×1200
+  photo resized to 1920×1920 became a 1920×1920 image with bands) and enlarged
+  images smaller than the box. It now gives the same sizes as the GD driver:
+  aspect ratio kept, no enlarging unless `upsize` is set, and the exact size
+  when `keep_aspect_ratio` is false. `fit` was already correct.
+- Tests for both image drivers with the same cases (skipped when an extension
+  is not installed).
+
+## 1.2.0 - 2026-10-10
 
 ### Added
 - `Uploader::video()` / `FloCMS\Uploader\Video\VideoUploader`: mp4 and webm
