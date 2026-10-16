@@ -45,12 +45,32 @@ class ImagickDriver implements ImageDriverInterface
         $keepAspect = $options['keep_aspect_ratio'] ?? true;
         $upsize = $options['upsize'] ?? false;
 
+        // Same sizes as the GD driver. thumbnailImage(..., fill: true) used to pad
+        // every image to the full box (a 2400x1200 photo became 1920x1920) and
+        // enlarged small ones; compute the target size instead.
         if (!$keepAspect) {
-            $this->image->resizeImage($maxWidth, $maxHeight, Imagick::FILTER_LANCZOS, 1.0, !$upsize);
+            $newWidth = max(1, $maxWidth);
+            $newHeight = max(1, $maxHeight);
+        } else {
+            $width = max(1, $this->image->getImageWidth());
+            $height = max(1, $this->image->getImageHeight());
+            $ratio = min($maxWidth / $width, $maxHeight / $height);
+            if (!$upsize) {
+                $ratio = min(1, $ratio);
+            }
+            $newWidth = max(1, (int) round($width * $ratio));
+            $newHeight = max(1, (int) round($height * $ratio));
+        }
+
+        if ($newWidth === $this->image->getImageWidth() && $newHeight === $this->image->getImageHeight()) {
             return;
         }
 
-        $this->image->thumbnailImage($maxWidth, $maxHeight, !$upsize, true);
+        try {
+            $this->image->resizeImage($newWidth, $newHeight, Imagick::FILTER_LANCZOS, 1.0);
+        } catch (ImagickException $e) {
+            throw new ImageProcessingException('Failed to resize image with Imagick.', 0, $e);
+        }
     }
 
     public function fit(int $width, int $height, array $options = []): void
